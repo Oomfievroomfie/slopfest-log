@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monospace Bitmap Font to TTF Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --surface-color: #1a1a1e;
+            --accent-color: #6366f1;
+            --accent-hover: #4f46e5;
+            --text-color: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --border-color: #2d2d34;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+            color: #fff;
+        }
+
+        p {
+            margin: 0;
+            color: var(--text-muted);
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 0.6rem;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        input[type="checkbox"] {
+            width: 1.2rem;
+            height: 1.2rem;
+            accent-color: var(--accent-color);
+        }
+
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: var(--accent-color);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+        }
+
+        button:disabled {
+            background-color: var(--border-color);
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
+        .preview-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 2rem;
+            min-height: 200px;
+            text-align: center;
+            background-color: rgba(0,0,0,0.1);
+        }
+
+        #imagePreview {
+            max-width: 100%;
+            max-height: 400px;
+            margin-top: 1rem;
+            image-rendering: pixelated;
+            display: none;
+            border: 1px solid var(--border-color);
+        }
+
+        .info-card {
+            margin-top: 1rem;
+            background-color: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .info-card ul {
+            margin: 0;
+            padding-left: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Monospace Bitmap to TTF Converter</h1>
+        <p>Convert grid-mapped font sheets into clean Windows-compliant vector OpenType fonts with layout padding adjustments.</p>
+    </header>
+
+    <div class="layout">
+        <div class="panel">
+            <div class="form-group">
+                <label for="fontSource">Select Font PNG Image (32 Columns Wide)</label>
+                <input type="file" id="fontSource" accept="image/png">
+            </div>
+
+            <div class="form-group">
+                <label for="fontName">Font Family Name</label>
+                <input type="text" id="fontName" value="RetroBitmapFont">
+            </div>
+
+            <div class="form-group">
+                <label for="glyphHeight">Glyph Height (Pixels per row)</label>
+                <input type="number" id="glyphHeight" value="16" min="2" max="128">
+            </div>
+
+            <div class="form-group">
+                <label for="descentPixels">Descent (Pixels below baseline)</label>
+                <input type="number" id="descentPixels" value="3" min="0" max="32">
+            </div>
+
+            <div class="form-group">
+                <label for="extraSpacing">Extra Typographic Spacing (Pixels)</label>
+                <input type="number" id="extraSpacing" value="2" min="-32" max="64" title="Adds blank horizontal space to the right of every character to prevent collision.">
+            </div>
+
+            <div class="form-group">
+                <label for="codepage">Character Mapping Association Codepage</label>
+                <select id="codepage">
+                    <option value="iso8859">ISO-8859-1 (Standard Extended ASCII)</option>
+                    <option value="cp437" selected>CP437 (IBM PC / DOS Graphics)</option>
+                    <option value="win1252">Windows-1252 (Western European)</option>
+                </select>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="invertChecked">
+                <label for="invertChecked">Invert Layout (Check if source has black text on white background)</label>
+            </div>
+
+            <button id="generateBtn" disabled>Generate & Download TTF</button>
+        </div>
+
+        <div class="panel" style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+                <label>Source Image Matrix Status</label>
+                <div class="preview-box" id="previewContainer">
+                    <span id="previewPlaceholder" style="color: var(--text-muted);">No image selected yet</span>
+                    <img id="imagePreview" alt="Source Bitmap Preview">
+                </div>
+            </div>
+
+            <div class="info-card">
+                <strong>Typographic Layout Matrix Adjustments:</strong>
+                <ul>
+                    <li><strong>Extra Typographic Spacing:</strong> Increases the structural rendering boundaries (`advanceWidth`) independently from pixel data loops. This compensates for tightly packed source asset matrices.</li>
+                    <li>Coordinates remain strictly aligned to font Em integers to preserve file system rendering integrity on desktop platforms.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const CP437_LOW = [
+        0, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022, 
+        0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
+        0x25BA, 0x25C4, 0x2195, 0x203C, 0x00B6, 0x00A7, 0x25AC, 0x21A8,
+        0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC
+    ];
+
+    const CP437_EXT = [
+        199, 252, 233, 226, 228, 224, 229, 231, 234, 235, 232, 239, 238, 236, 196, 197,
+        201, 230, 198, 244, 246, 242, 251, 249, 255, 214, 220, 162, 163, 165, 8359, 402,
+        225, 237, 243, 250, 241, 209, 170, 186, 191, 8976, 172, 189, 188, 161, 171, 187,
+        9617, 9618, 9619, 9474, 9508, 9569, 9570, 9558, 9557, 9571, 9553, 9559, 9565, 9564, 9563, 9488,
+        9492, 9524, 9516, 9500, 9472, 9532, 9566, 9567, 9562, 9556, 9577, 9574, 9568, 9552, 9580, 9575,
+        9576, 9572, 9573, 9561, 9560, 9554, 9555, 9579, 9578, 9496, 9484, 9608, 9604, 9612, 9616, 9600,
+        945, 223, 915, 960, 931, 963, 181, 964, 934, 920, 937, 948, 8734, 966, 949, 8745,
+        8801, 177, 8805, 8804, 8992, 8993, 247, 8776, 176, 8729, 183, 8730, 8319, 178, 9632, 160
+    ];
+
+    const WIN1252_EXT = [
+        8364, 0, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 0, 381, 0,
+        0, 8216, 8217, 8220, 8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 0, 382, 376
+    ];
+
+    let loadedImage = null;
+    const fileInput = document.getElementById('fontSource');
+    const imagePreview = document.getElementById('imagePreview');
+    const placeholder = document.getElementById('previewPlaceholder');
+    const generateBtn = document.getElementById('generateBtn');
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            loadedImage = new Image();
+            loadedImage.onload = () => {
+                imagePreview.src = event.target.result;
+                imagePreview.style.display = 'block';
+                placeholder.style.display = 'none';
+                generateBtn.disabled = false;
+            };
+            loadedImage.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    generateBtn.addEventListener('click', () => {
+        if (!loadedImage) return;
+        processBitmapFont();
+    });
+
+    function getUnicodeCodePoint(index, codepage) {
+        if (index < 0 || index > 255) return index;
+        
+        if (codepage === 'cp437') {
+            if (index < 32) return CP437_LOW[index];
+            if (index === 127) return 0x2302;
+            if (index >= 128) return CP437_EXT[index - 128];
+            return index;
+        } else if (codepage === 'win1252') {
+            if (index >= 128 && index <= 159) {
+                return WIN1252_EXT[index - 128] || index;
+            }
+            return index;
+        }
+        return index;
+    }
+
+    function traceIslands(grid, W, H) {
+        const edges = [];
+        const isSolid = (x, y) => {
+            if (x < 0 || x >= W || y < 0 || y >= H) return false;
+            return grid[y][x];
+        };
+
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                if (isSolid(x, y)) {
+                    if (!isSolid(x, y - 1)) edges.push({ p1: { x: x, y: y }, p2: { x: x + 1, y: y } });
+                    if (!isSolid(x + 1, y)) edges.push({ p1: { x: x + 1, y: y }, p2: { x: x + 1, y: y + 1 } });
+                    if (!isSolid(x, y + 1)) edges.push({ p1: { x: x + 1, y: y + 1 }, p2: { x: x, y: y + 1 } });
+                    if (!isSolid(x - 1, y)) edges.push({ p1: { x: x, y: y + 1 }, p2: { x: x, y: y } });
+                }
+            }
+        }
+
+        const loops = [];
+        while (edges.length > 0) {
+            const loop = [];
+            let current = edges.shift();
+            loop.push(current.p1);
+            let nextPoint = current.p2;
+
+            let walking = true;
+            while (walking) {
+                const index = edges.findIndex(e => e.p1.x === nextPoint.x && e.p1.y === nextPoint.y);
+                if (index !== -1) {
+                    const nextEdge = edges.splice(index, 1)[0];
+                    loop.push(nextEdge.p1);
+                    nextPoint = nextEdge.p2;
+                } else {
+                    walking = false;
+                }
+            }
+            if (loop.length >= 3) {
+                loops.push(optimizeCollinearNodes(loop));
+            }
+        }
+        return loops;
+    }
+
+    function optimizeCollinearNodes(loop) {
+        if (loop.length < 3) return loop;
+        const result = [];
+        for (let i = 0; i < loop.length; i++) {
+            const prev = loop[(i - 1 + loop.length) % loop.length];
+            const curr = loop[i];
+            const next = loop[(i + 1) % loop.length];
+
+            const dx1 = curr.x - prev.x;
+            const dy1 = curr.y - prev.y;
+            const dx2 = next.x - curr.x;
+            const dy2 = next.y - curr.y;
+
+            if (dx1 * dy2 - dy1 * dx2 !== 0) {
+                result.push(curr);
+            }
+        }
+        return result;
+    }
+
+    function processBitmapFont() {
+        const fontName = document.getElementById('fontName').value.replace(/[^a-zA-Z0-9\-_]/g, "") || 'BitmapFont';
+        const glyphHeight = parseInt(document.getElementById('glyphHeight').value, 10);
+        const descentPixels = parseInt(document.getElementById('descentPixels').value, 10);
+        const extraSpacing = parseInt(document.getElementById('extraSpacing').value, 10) || 0;
+        const codepage = document.getElementById('codepage').value;
+        const invert = document.getElementById('invertChecked').checked;
+
+        if (loadedImage.width % 32 !== 0) {
+            alert("Error: Image width must be perfectly divisible by 32 horizontal alignment columns.");
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = loadedImage.width;
+        canvas.height = loadedImage.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(loadedImage, 0, 0);
+
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const glyphWidth = canvas.width / 32;
+
+        const totalVerticalRows = Math.floor(canvas.height / glyphHeight);
+        const totalGlyphs = 32 * totalVerticalRows;
+
+        const processedGlyphs = [];
+        const unicodeMap = new Set();
+
+        const unitsPerEm = 1024;
+        const scaleFactor = unitsPerEm / glyphHeight;
+        
+        // Include extra pixel tracking directly within the EM coordinate calculations
+        const advanceWidthInt = Math.round((glyphWidth + extraSpacing) * scaleFactor);
+        const ascenderInt = Math.round((glyphHeight - descentPixels) * scaleFactor);
+        const descenderInt = Math.round(-descentPixels * scaleFactor);
+
+        // Windows-isolated structural null index mapping
+        const notdefGlyph = new opentype.Glyph({
+            name: '.notdef',
+            advanceWidth: advanceWidthInt,
+            path: new opentype.Path()
+        });
+        processedGlyphs.push(notdefGlyph);
+
+        for (let g = 0; g < Math.min(totalGlyphs, 256); g++) {
+            const col = g % 32;
+            const row = Math.floor(g / 32);
+
+            const xOffset = col * glyphWidth;
+            const yOffset = row * glyphHeight;
+
+            const binaryGrid = [];
+            for (let y = 0; y < glyphHeight; y++) {
+                binaryGrid[y] = [];
+                for (let x = 0; x < glyphWidth; x++) {
+                    const pixelIndex = ((yOffset + y) * canvas.width + (xOffset + x)) * 4;
+                    const r = imgData.data[pixelIndex];
+                    const greenChannel = imgData.data[pixelIndex + 1];
+                    const b = imgData.data[pixelIndex + 2];
+                    const a = imgData.data[pixelIndex + 3];
+
+                    let solid = false;
+                    if (a > 40) {
+                        const luma = 0.299 * r + 0.587 * greenChannel + 0.114 * b;
+                        solid = invert ? (luma < 128) : (luma > 128);
+                    }
+                    binaryGrid[y][x] = solid;
+                }
+            }
+
+            const contours = traceIslands(binaryGrid, glyphWidth, glyphHeight);
+            const glyphPath = new opentype.Path();
+
+            contours.forEach(loop => {
+                if (loop.length === 0) return;
+
+                const parsePoint = (pt) => ({
+                    x: Math.round(pt.x * scaleFactor),
+                    y: Math.round((glyphHeight - descentPixels - pt.y) * scaleFactor)
+                });
+
+                const startPoint = parsePoint(loop[0]);
+                glyphPath.moveTo(startPoint.x, startPoint.y);
+
+                for (let i = 1; i < loop.length; i++) {
+                    const point = parsePoint(loop[i]);
+                    glyphPath.lineTo(point.x, point.y);
+                }
+                glyphPath.closePath();
+            });
+
+            let associatedUnicode = getUnicodeCodePoint(g, codepage);
+            
+            if (unicodeMap.has(associatedUnicode) || associatedUnicode === 0) {
+                associatedUnicode = null;
+            } else {
+                unicodeMap.add(associatedUnicode);
+            }
+
+            const individualGlyph = new opentype.Glyph({
+                name: `glyph_${g}`,
+                unicode: associatedUnicode || undefined,
+                advanceWidth: advanceWidthInt,
+                path: glyphPath
+            });
+            processedGlyphs.push(individualGlyph);
+        }
+
+        // Apply updated advance width metrics cleanly to the fallback whitespace map
+        if (!unicodeMap.has(32)) {
+            const spaceGlyph = new opentype.Glyph({
+                name: 'space',
+                unicode: 32,
+                advanceWidth: advanceWidthInt,
+                path: new opentype.Path()
+            });
+            processedGlyphs.push(spaceGlyph);
+        }
+
+        const finalFont = new opentype.Font({
+            familyName: fontName,
+            styleName: 'Regular',
+            unitsPerEm: unitsPerEm,
+            ascender: ascenderInt,
+            descender: descenderInt,
+            glyphs: processedGlyphs
+        });
+
+        try {
+            const fontBuffer = finalFont.toArrayBuffer();
+            exportBinaryFile(fontBuffer, `${fontName}.ttf`, 'font/ttf');
+        } catch (err) {
+            console.error("Font packaging runtime crash: ", err);
+            alert("Failed compilation during font assembly parsing generation phases.");
+        }
+    }
+
+    function exportBinaryFile(arrayBuffer, filename, contentType) {
+        const outputBlob = new Blob([arrayBuffer], { type: contentType });
+        const downloadUrl = URL.createObjectURL(outputBlob);
+        const downloadTrigger = document.createElement('a');
+        downloadTrigger.href = downloadUrl;
+        downloadTrigger.download = filename;
+        document.body.appendChild(downloadTrigger);
+        downloadTrigger.click();
+        document.body.removeChild(downloadTrigger);
+        URL.revokeObjectURL(downloadUrl);
+    }
+</script>
+
+</body>
+</html>
