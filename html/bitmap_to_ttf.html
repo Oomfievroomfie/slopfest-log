@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monospace Bitmap Font to TTF Converter</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
+    <script src="_edited_opentype.js"></script>
     <style>
         :root {
             --bg-color: #121214;
@@ -181,7 +181,7 @@
     <div class="layout">
         <div class="panel">
             <div class="form-group">
-                <label for="fontSource">Select Font PNG Image (32 Columns Wide)</label>
+                <label for="fontSource">Select Font PNG Image</label>
                 <input type="file" id="fontSource" accept="image/png">
             </div>
 
@@ -193,6 +193,11 @@
             <div class="form-group">
                 <label for="glyphHeight">Glyph Height (Pixels per row)</label>
                 <input type="number" id="glyphHeight" value="16" min="2" max="128">
+            </div>
+
+            <div class="form-group">
+                <label for="gridColumns">Columns in Grid</label>
+                <input type="number" id="gridColumns" value="32" min="1" max="256">
             </div>
 
             <div class="form-group">
@@ -211,12 +216,18 @@
                     <option value="iso8859">ISO-8859-1 (Standard Extended ASCII)</option>
                     <option value="cp437" selected>CP437 (IBM PC / DOS Graphics)</option>
                     <option value="win1252">Windows-1252 (Western European)</option>
+                    <option value="unicode">Unicode Direct (Index = Codepoint)</option>
                 </select>
             </div>
 
             <div class="form-group checkbox-group">
                 <input type="checkbox" id="invertChecked">
                 <label for="invertChecked">Invert Layout (Check if source has black text on white background)</label>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="halfwidthDetect">
+                <label for="halfwidthDetect">Detect Half-Width Glyphs (applies 2× extra spacing to fullwidth chars)</label>
             </div>
 
             <button id="generateBtn" disabled>Generate & Download TTF</button>
@@ -295,9 +306,21 @@
         processBitmapFont();
     });
 
+    function isValidUnicodeScalar(cp) {
+        if (typeof cp !== 'number' || cp < 0 || cp > 0x10FFFF) return false;
+        if (cp == 0xFFFD) return true;
+        if (cp >= 0xD800 && cp <= 0xDFFF) return false;       // Surrogates — never valid Unicode scalars
+        if (cp >= 0xFDD0 && cp <= 0xFDEF) return false;       // Non-characters
+        if (cp >= 0xFFF0 && cp <= 0xFFFF) return false;       // U+FFEF–U+FFFF
+        if (cp == 0xFEFF) return false;
+        if ((cp & 0xFFFE) === 0xFFFE) return false;           // Supplementary-plane non-characters (U+1FFFE, U+1FFFF, etc.)
+        return true;
+    }
+
     function getUnicodeCodePoint(index, codepage) {
+        if (codepage === 'unicode') return index;
         if (index < 0 || index > 255) return index;
-        
+
         if (codepage === 'cp437') {
             if (index < 32) return CP437_LOW[index];
             if (index === 127) return 0x2302;
@@ -313,43 +336,57 @@
     }
 
     function traceIslands(grid, W, H) {
-        const edges = [];
-        const isSolid = (x, y) => {
-            if (x < 0 || x >= W || y < 0 || y >= H) return false;
-            return grid[y][x];
-        };
-
-        for (let y = 0; y < H; y++) {
-            for (let x = 0; x < W; x++) {
-                if (isSolid(x, y)) {
-                    if (!isSolid(x, y - 1)) edges.push({ p1: { x: x, y: y }, p2: { x: x + 1, y: y } });
-                    if (!isSolid(x + 1, y)) edges.push({ p1: { x: x + 1, y: y }, p2: { x: x + 1, y: y + 1 } });
-                    if (!isSolid(x, y + 1)) edges.push({ p1: { x: x + 1, y: y + 1 }, p2: { x: x, y: y + 1 } });
-                    if (!isSolid(x - 1, y)) edges.push({ p1: { x: x, y: y + 1 }, p2: { x: x, y: y } });
-                }
-            }
-        }
-
+        // visited grid — one bool per pixel, reset per glyph
+        const visited = [];
+        for (let y = 0; y < H; y++) visited[y] = new Array(W).fill(false);
         const loops = [];
-        while (edges.length > 0) {
-            const loop = [];
-            let current = edges.shift();
-            loop.push(current.p1);
-            let nextPoint = current.p2;
 
-            let walking = true;
-            while (walking) {
-                const index = edges.findIndex(e => e.p1.x === nextPoint.x && e.p1.y === nextPoint.y);
-                if (index !== -1) {
-                    const nextEdge = edges.splice(index, 1)[0];
-                    loop.push(nextEdge.p1);
-                    nextPoint = nextEdge.p2;
-                } else {
-                    walking = false;
+        for (let sy = 0; sy < H; sy++) {
+            for (let sx = 0; sx < W; sx++) {
+                if (!grid[sy][sx] || visited[sy][sx]) continue;
+
+                // Flood fill to find all pixels in this connected island
+                const island = [];
+                const stack = [[sx, sy]];
+                visited[sy][sx] = true;
+                while (stack.length) {
+                    const [cx, cy] = stack.pop();
+                    island.push([cx, cy]);
+                    if (cx > 0        && grid[cy][cx - 1] && !visited[cy][cx - 1]) { visited[cy][cx - 1] = true; stack.push([cx - 1, cy]); }
+                    if (cx < W - 1    && grid[cy][cx + 1] && !visited[cy][cx + 1]) { visited[cy][cx + 1] = true; stack.push([cx + 1, cy]); }
+                    if (cy > 0        && grid[cy - 1][cx] && !visited[cy - 1][cx]) { visited[cy - 1][cx] = true; stack.push([cx, cy - 1]); }
+                    if (cy < H - 1    && grid[cy + 1][cx] && !visited[cy + 1][cx]) { visited[cy + 1][cx] = true; stack.push([cx, cy + 1]); }
                 }
-            }
-            if (loop.length >= 3) {
-                loops.push(optimizeCollinearNodes(loop));
+
+                // Collect perimeter edges for this island as an array.
+                // Must use an array (not a Map) because at concave corners of holes two
+                // different edges can share the same p1 coordinate — a Map would overwrite.
+                const edges = [];
+                for (const [px, py] of island) {
+                    if (py === 0    || !grid[py - 1][px]) edges.push({ p1: { x: px, y: py }, p2: { x: px + 1, y: py } });
+                    if (px === W - 1 || !grid[py][px + 1]) edges.push({ p1: { x: px + 1, y: py }, p2: { x: px + 1, y: py + 1 } });
+                    if (py === H - 1 || !grid[py + 1][px]) edges.push({ p1: { x: px + 1, y: py + 1 }, p2: { x: px, y: py + 1 } });
+                    if (px === 0    || !grid[py][px - 1]) edges.push({ p1: { x: px, y: py + 1 }, p2: { x: px, y: py } });
+                }
+
+                // Walk the edges to form closed contour loops
+                while (edges.length > 0) {
+                    const loop = [];
+                    let current = edges.shift();
+                    loop.push(current.p1);
+                    let nextPoint = current.p2;
+
+                    while (true) {
+                        const index = edges.findIndex(e => e.p1.x === nextPoint.x && e.p1.y === nextPoint.y);
+                        if (index === -1) break;
+                        const nextEdge = edges.splice(index, 1)[0];
+                        loop.push(nextEdge.p1);
+                        nextPoint = nextEdge.p2;
+                    }
+                    if (loop.length >= 3) {
+                        loops.push(optimizeCollinearNodes(loop));
+                    }
+                }
             }
         }
         return loops;
@@ -382,9 +419,15 @@
         const extraSpacing = parseInt(document.getElementById('extraSpacing').value, 10) || 0;
         const codepage = document.getElementById('codepage').value;
         const invert = document.getElementById('invertChecked').checked;
+        const halfwidthDetect = document.getElementById('halfwidthDetect').checked;
 
-        if (loadedImage.width % 32 !== 0) {
-            alert("Error: Image width must be perfectly divisible by 32 horizontal alignment columns.");
+        const columns = parseInt(document.getElementById('gridColumns').value, 10) || 32;
+        if (columns < 1) {
+            alert("Error: Number of columns must be at least 1.");
+            return;
+        }
+        if (loadedImage.width % columns !== 0) {
+            alert(`Error: Image width (${loadedImage.width}px) must be perfectly divisible by ${columns} columns.`);
             return;
         }
 
@@ -395,10 +438,10 @@
         ctx.drawImage(loadedImage, 0, 0);
 
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const glyphWidth = canvas.width / 32;
+        const glyphWidth = canvas.width / columns;
 
         const totalVerticalRows = Math.floor(canvas.height / glyphHeight);
-        const totalGlyphs = 32 * totalVerticalRows;
+        const totalGlyphs = columns * totalVerticalRows;
 
         const processedGlyphs = [];
         const unicodeMap = new Set();
@@ -406,22 +449,28 @@
         const unitsPerEm = 1024;
         const scaleFactor = unitsPerEm / glyphHeight;
         
-        // Include extra pixel tracking directly within the EM coordinate calculations
-        const advanceWidthInt = Math.round((glyphWidth + extraSpacing) * scaleFactor);
+        // Extra spacing advance-width variants:
+        //   base:   full cell + 1× spacing (used when halfwidth detection is off)
+        //   half:   half cell + 1× spacing (used when detection is on and no right-half pixels)
+        //   full:   full cell + 2× spacing (used when detection is on and right-half pixels exist)
+        const baseAdvanceWidth = Math.round((glyphWidth + extraSpacing) * scaleFactor);
+        const halfAdvanceWidth = Math.round(((glyphWidth / 2) + extraSpacing) * scaleFactor);
+        const fullAdvanceWidth = Math.round((glyphWidth + extraSpacing * 2) * scaleFactor);
         const ascenderInt = Math.round((glyphHeight - descentPixels) * scaleFactor);
         const descenderInt = Math.round(-descentPixels * scaleFactor);
 
         // Windows-isolated structural null index mapping
         const notdefGlyph = new opentype.Glyph({
             name: '.notdef',
-            advanceWidth: advanceWidthInt,
+            advanceWidth: baseAdvanceWidth,
             path: new opentype.Path()
         });
         processedGlyphs.push(notdefGlyph);
 
-        for (let g = 0; g < Math.min(totalGlyphs, 256); g++) {
-            const col = g % 32;
-            const row = Math.floor(g / 32);
+        const maxGlyphs = (codepage === 'unicode') ? totalGlyphs : Math.min(totalGlyphs, 256);
+        for (let g = 0; g < maxGlyphs; g++) {
+            const col = g % columns;
+            const row = Math.floor(g / columns);
 
             const xOffset = col * glyphWidth;
             const yOffset = row * glyphHeight;
@@ -445,6 +494,12 @@
                 }
             }
 
+            // Determine glyph advance width based on halfwidth detection
+            const glyphAdvanceWidth = halfwidthDetect
+                ? (binaryGrid.some(row => row.some((solid, x) => solid && x >= glyphWidth / 2))
+                    ? fullAdvanceWidth : halfAdvanceWidth)
+                : baseAdvanceWidth;
+
             const contours = traceIslands(binaryGrid, glyphWidth, glyphHeight);
             const glyphPath = new opentype.Path();
 
@@ -466,18 +521,19 @@
                 glyphPath.closePath();
             });
 
-            let associatedUnicode = getUnicodeCodePoint(g, codepage);
-            
-            if (unicodeMap.has(associatedUnicode) || associatedUnicode === 0) {
-                associatedUnicode = null;
-            } else {
-                unicodeMap.add(associatedUnicode);
+            // Skip invalid/duplicate codepoints entirely — no glyph created.
+            // This keeps total glyph count under the USHORT limit (65535) when the
+            // grid contains positions whose codepoints are surrogates, non-characters, etc.
+            const cp = getUnicodeCodePoint(g, codepage);
+            if (cp === 0 || !isValidUnicodeScalar(cp) || unicodeMap.has(cp)) {
+                continue;
             }
+            unicodeMap.add(cp);
 
             const individualGlyph = new opentype.Glyph({
                 name: `glyph_${g}`,
-                unicode: associatedUnicode || undefined,
-                advanceWidth: advanceWidthInt,
+                unicode: cp,
+                advanceWidth: glyphAdvanceWidth,
                 path: glyphPath
             });
             processedGlyphs.push(individualGlyph);
@@ -488,11 +544,21 @@
             const spaceGlyph = new opentype.Glyph({
                 name: 'space',
                 unicode: 32,
-                advanceWidth: advanceWidthInt,
+                advanceWidth: baseAdvanceWidth,
                 path: new opentype.Path()
             });
             processedGlyphs.push(spaceGlyph);
         }
+
+        // Calculate codepoint range for OS/2 table (Windows requires this)
+        let firstChar = 0xFFFF, lastChar = 0;
+        for (const glyph of processedGlyphs) {
+            if (glyph.unicode != null) {
+                if (glyph.unicode < firstChar) firstChar = glyph.unicode;
+                if (glyph.unicode > lastChar) lastChar = glyph.unicode;
+            }
+        }
+        if (firstChar > lastChar) { firstChar = 32; lastChar = 0xFF; }
 
         const finalFont = new opentype.Font({
             familyName: fontName,
@@ -500,7 +566,51 @@
             unitsPerEm: unitsPerEm,
             ascender: ascenderInt,
             descender: descenderInt,
-            glyphs: processedGlyphs
+            glyphs: processedGlyphs,
+
+            lineGap: 0,
+
+            // Head table — ensure regular style flags
+            head: {
+                macStyle: 0
+            },
+
+            // OS/2 table with all fields Windows requires
+            os2: {
+                sTypoAscender: ascenderInt,
+                sTypoDescender: descenderInt,
+                sTypoLineGap: 0,
+                usWinAscent: ascenderInt,
+                usWinDescent: Math.abs(descenderInt),
+                usWeightClass: 400,
+                usWidthClass: 5,
+                fsSelection: 0x0040,
+                fsType: 0x0000,
+                panose: [2, 11, 6, 9, 2, 2, 3, 2, 2, 4],
+                usFirstCharIndex: firstChar,
+                usLastCharIndex: lastChar,
+                xAvgCharWidth: Math.round(baseAdvanceWidth),
+                achVendID: 'NONE',
+                sFamilyClass: 0
+            },
+            hhea: {
+                ascender: ascenderInt,
+                descender: descenderInt,
+                lineGap: 0
+            },
+
+            // Post table — mark as proportional when halfwidth detection is on
+            post: {
+                isFixedPitch: halfwidthDetect ? 0 : 1,
+                italicAngle: 0,
+                underlinePosition: -100,
+                underlineThickness: 50
+            },
+
+            // Name table — set proper PostScript name (Windows requires this)
+            name: {
+                postScriptName: fontName + '-Regular'
+            }
         });
 
         try {
