@@ -33,6 +33,6 @@ Safetensors viewer with geometric organization:
 - https://oomfievroomfie.github.io/slopfest-log/html/safetenview_v2.html
 
 Bitmap font to TTF converter:
-- bitmap_to_ttf.html
+- https://oomfievroomfie.github.io/slopfest-log/html/bitmap_to_ttf.html
 
 py/ddslop.py: python/numpy-only library for compressing dds files (DXT1/DXT5/BC7) with mipmaps. slightly higher quality BC7 output than texconv's GPU driver, but slower.
